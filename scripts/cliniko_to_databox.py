@@ -31,19 +31,25 @@ HEADERS = {
 }
 AUTH = (CLINIKO_API_KEY, "")
 
-# Cliniko is inconsistent: the patients endpoint wants plain yyyy-mm-dd dates,
-# while individual_appointments wants full UTC timestamps.
+# Timestamp fields (created_at, cancelled_at) need full UTC timestamps.
+# The plain date field (issue_date on invoices) needs yyyy-mm-dd only.
 today = datetime.now(timezone.utc).date()
 yesterday = today - timedelta(days=1)
-date_start = yesterday.isoformat()
-date_end = today.isoformat()
 ts_start = f"{yesterday.isoformat()}T00:00:00Z"
 ts_end = f"{today.isoformat()}T00:00:00Z"
 
 
-def cliniko_get_all(path, params=None):
-    params = dict(params or {})
-    params["per_page"] = 100
+def cliniko_get_all(path, filters=None):
+    """Paginate through a Cliniko endpoint and return the combined list of records.
+
+    filters: a list of filter strings, each sent as its own q[] parameter,
+    e.g. ["created_at:>=2026-07-12T00:00:00Z", "created_at:<2026-07-13T00:00:00Z"]
+    """
+    # Build params as a list of tuples so we can repeat the "q[]" key -
+    # a dict would silently collapse multiple q[] conditions into one.
+    params = [("q[]", f) for f in (filters or [])]
+    params.append(("per_page", 100))
+
     results = []
     url = f"{BASE_URL}/{path}"
     while url:
@@ -53,14 +59,14 @@ def cliniko_get_all(path, params=None):
         key = [k for k in data.keys() if k != "links" and k != "total_entries"][0]
         results.extend(data[key])
         url = data.get("links", {}).get("next")
-        params = None
+        params = None  # next link already has everything encoded in it
     return results
 
 
 def get_new_patients():
     patients = cliniko_get_all(
         "patients",
-        {"q[]": f"created_at:>={date_start},created_at:<{date_end}"},
+        [f"created_at:>={ts_start}", f"created_at:<{ts_end}"],
     )
     return len(patients)
 
@@ -68,11 +74,11 @@ def get_new_patients():
 def get_appointments():
     booked = cliniko_get_all(
         "individual_appointments",
-        {"q[]": f"created_at:>={ts_start},created_at:<{ts_end}"},
+        [f"created_at:>={ts_start}", f"created_at:<{ts_end}"],
     )
     cancelled = cliniko_get_all(
         "individual_appointments",
-        {"q[]": f"cancelled_at:>={ts_start},cancelled_at:<{ts_end}"},
+        [f"cancelled_at:>={ts_start}", f"cancelled_at:<{ts_end}"],
     )
     return len(booked), len(cancelled)
 
@@ -80,7 +86,7 @@ def get_appointments():
 def get_invoices():
     invoices = cliniko_get_all(
         "invoices",
-        {"q[]": f"issue_date:>={yesterday.isoformat()},issue_date:<={yesterday.isoformat()}"},
+        [f"issue_date:>={yesterday.isoformat()}", f"issue_date:<={yesterday.isoformat()}"],
     )
     revenue = sum(float(inv.get("total_including_tax", 0) or 0) for inv in invoices)
     return len(invoices), revenue
@@ -101,7 +107,7 @@ def push_to_databox(metrics):
 
 
 def main():
-    date_str = date_start
+    date_str = yesterday.isoformat()
 
     new_patients = get_new_patients()
     booked, cancelled = get_appointments()
