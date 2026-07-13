@@ -84,4 +84,51 @@ def get_appointments():
     return len(booked), len(cancelled)
 
 
-def
+def get_invoices():
+    invoices = cliniko_get_all(
+        "invoices",
+        [f"issue_date:>={yesterday.isoformat()}", f"issue_date:<={yesterday.isoformat()}"],
+    )
+    revenue = sum(float(inv.get("total_including_tax", 0) or 0) for inv in invoices)
+    return len(invoices), revenue
+
+
+def push_to_databox(metrics):
+    resp = requests.post(
+        "https://push.databox.com/data",
+        auth=(DATABOX_TOKEN, ""),
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/vnd.databox.v2+json",
+        },
+        json=metrics,
+    )
+    resp.raise_for_status()
+    print("Pushed to Databox:", resp.json())
+
+
+def main():
+    date_str = yesterday.isoformat()
+
+    new_patients = get_new_patients()
+    booked, cancelled = get_appointments()
+    invoice_count, revenue = get_invoices()
+
+    metrics = [
+        {"key": "cliniko_new_patients", "value": new_patients, "date": date_str},
+        {"key": "cliniko_appointments_booked", "value": booked, "date": date_str},
+        {"key": "cliniko_appointments_cancelled", "value": cancelled, "date": date_str},
+        {"key": "cliniko_invoices_issued", "value": invoice_count, "date": date_str},
+        {"key": "cliniko_invoice_revenue", "value": round(revenue, 2), "date": date_str},
+    ]
+
+    print(f"Metrics for {date_str}: {metrics}")
+    push_to_databox(metrics)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except requests.HTTPError as e:
+        print(f"HTTP error: {e.response.status_code} {e.response.text}", file=sys.stderr)
+        sys.exit(1)
