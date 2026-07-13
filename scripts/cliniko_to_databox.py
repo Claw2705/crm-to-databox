@@ -34,9 +34,15 @@ AUTH = (CLINIKO_API_KEY, "")
 # Timestamp fields (created_at, cancelled_at) need full UTC timestamps.
 # The plain date field (issue_date on invoices) needs yyyy-mm-dd only.
 today = datetime.now(timezone.utc).date()
-yesterday = today - timedelta(days=1)
-ts_start = f"{yesterday.isoformat()}T00:00:00Z"
-ts_end = f"{today.isoformat()}T00:00:00Z"
+   yesterday = today - timedelta(days=1)
+
+   # TEMPORARY TEST MODE: shift the window forward one day to capture TODAY's
+   # activity instead of yesterday's. Remove these two lines to go back to normal.
+   yesterday = today
+   today = today + timedelta(days=1)
+
+   ts_start = f"{yesterday.isoformat()}T00:00:00Z"
+   ts_end = f"{today.isoformat()}T00:00:00Z"
 
 
 def cliniko_get_all(path, filters=None):
