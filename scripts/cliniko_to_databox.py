@@ -11,7 +11,6 @@ Metrics pushed:
 Required environment variables / GitHub secrets:
   CLINIKO_API_KEY   - from Cliniko: My Info > Manage API keys
   CLINIKO_SHARD     - the subdomain in your Cliniko URL, e.g. "api.au4" or "api.uk2"
-                       (find it in Settings > API Keys, it's shown in the base URL)
   DATABOX_TOKEN     - Databox push token (Data Manager > Active data connections)
 """
 
@@ -28,20 +27,21 @@ DATABOX_TOKEN = os.environ["DATABOX_TOKEN"]
 BASE_URL = f"https://{CLINIKO_SHARD}.cliniko.com/v1"
 HEADERS = {
     "Accept": "application/json",
-    # Cliniko requires a descriptive User-Agent identifying your app + contact email
     "User-Agent": "CRM-to-Databox-Sync (you@example.com)",
 }
-AUTH = (CLINIKO_API_KEY, "")  # HTTP Basic auth, password left blank
+AUTH = (CLINIKO_API_KEY, "")
 
-# Yesterday's date window, UTC. Adjust timezone as needed for your clinic.
+# Cliniko is inconsistent: the patients endpoint wants plain yyyy-mm-dd dates,
+# while individual_appointments wants full UTC timestamps.
 today = datetime.now(timezone.utc).date()
 yesterday = today - timedelta(days=1)
-start = f"{yesterday.isoformat()}T00:00:00Z"
-end = f"{today.isoformat()}T00:00:00Z"
+date_start = yesterday.isoformat()
+date_end = today.isoformat()
+ts_start = f"{yesterday.isoformat()}T00:00:00Z"
+ts_end = f"{today.isoformat()}T00:00:00Z"
 
 
 def cliniko_get_all(path, params=None):
-    """Paginate through a Cliniko endpoint and return the combined list of records."""
     params = dict(params or {})
     params["per_page"] = 100
     results = []
@@ -50,18 +50,17 @@ def cliniko_get_all(path, params=None):
         resp = requests.get(url, headers=HEADERS, auth=AUTH, params=params)
         resp.raise_for_status()
         data = resp.json()
-        # Cliniko wraps results under the resource name, e.g. {"patients": [...]}
         key = [k for k in data.keys() if k != "links" and k != "total_entries"][0]
         results.extend(data[key])
         url = data.get("links", {}).get("next")
-        params = None  # params are baked into the "next" link already
+        params = None
     return results
 
 
 def get_new_patients():
     patients = cliniko_get_all(
         "patients",
-        {"q[]": f"created_at:>={start},created_at:<{end}"},
+        {"q[]": f"created_at:>={date_start},created_at:<{date_end}"},
     )
     return len(patients)
 
@@ -69,11 +68,11 @@ def get_new_patients():
 def get_appointments():
     booked = cliniko_get_all(
         "individual_appointments",
-        {"q[]": f"created_at:>={start},created_at:<{end}"},
+        {"q[]": f"created_at:>={ts_start},created_at:<{ts_end}"},
     )
     cancelled = cliniko_get_all(
         "individual_appointments",
-        {"q[]": f"cancelled_at:>={start},cancelled_at:<{end}"},
+        {"q[]": f"cancelled_at:>={ts_start},cancelled_at:<{ts_end}"},
     )
     return len(booked), len(cancelled)
 
@@ -88,7 +87,6 @@ def get_invoices():
 
 
 def push_to_databox(metrics):
-    """metrics: list of {"key": ..., "value": ..., "date": ...}"""
     resp = requests.post(
         "https://push.databox.com/data",
         auth=(DATABOX_TOKEN, ""),
@@ -103,7 +101,7 @@ def push_to_databox(metrics):
 
 
 def main():
-    date_str = yesterday.isoformat()
+    date_str = date_start
 
     new_patients = get_new_patients()
     booked, cancelled = get_appointments()
