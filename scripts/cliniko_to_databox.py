@@ -36,8 +36,8 @@ AUTH = (CLINIKO_API_KEY, "")  # HTTP Basic auth, password left blank
 # Yesterday's date window, UTC. Adjust timezone as needed for your clinic.
 today = datetime.now(timezone.utc).date()
 yesterday = today - timedelta(days=1)
-start = f"{yesterday.isoformat()}T00:00:00Z"
-end = f"{today.isoformat()}T00:00:00Z"
+start = yesterday.isoformat()
+end = today.isoformat()
 
 
 def cliniko_get_all(path, params=None):
