@@ -1,0 +1,40 @@
+name: Sync CRM data to Databox
+
+on:
+  schedule:
+    # Runs daily at 05:00 UTC (adjust to run after your clinic/facility day closes)
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}  # lets you trigger it manually from the Actions tab
+
+jobs:
+  sync-cliniko:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Push Cliniko metrics to Databox
+        env:
+          CLINIKO_API_KEY: ${{ secrets.CLINIKO_API_KEY }}
+          CLINIKO_SHARD: ${{ secrets.CLINIKO_SHARD }}
+          DATABOX_TOKEN: ${{ secrets.DATABOX_TOKEN }}
+        run: python scripts/cliniko_to_databox.py
+
+  sync-mywellness:
+    runs-on: ubuntu-latest
+    # Remove this job (or comment it out) until your mywellness API agreement
+    # with Technogym is approved and you've filled in real endpoints.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Push mywellness metrics to Databox
+        env:
+          MYWELLNESS_API_KEY: ${{ secrets.MYWELLNESS_API_KEY }}
+          MYWELLNESS_FACILITY_ID: ${{ secrets.MYWELLNESS_FACILITY_ID }}
+          DATABOX_TOKEN: ${{ secrets.DATABOX_TOKEN }}
+        run: python scripts/mywellness_to_databox.py
